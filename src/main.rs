@@ -1,6 +1,5 @@
-use std::io::BufRead;
-use std::io::BufReader;
 use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use structopt::StructOpt;
 
@@ -15,9 +14,10 @@ struct Opt {
 #[derive(Debug)]
 struct DiskIoRec {
     timestamp: String,
-    op: String,
-    amount: String,
-    program: String,
+    call: String,
+    bytes: u64,
+    interval: f64,
+    process: String,
 }
 
 fn main() {
@@ -46,8 +46,9 @@ fn process_file(path: PathBuf) -> Result<(), Err> {
 fn parse_line(s: String) -> DiskIoRec {
     DiskIoRec {
         timestamp: "1".to_string(),
-        op: "op".to_string(),
-        amount: "op".to_string(),
-        program: "op".to_string(),
+        call: "op".to_string(),
+        bytes: 1,
+        interval: 0.1,
+        process: "op".to_string(),
     }
 }
