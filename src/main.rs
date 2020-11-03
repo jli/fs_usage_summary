@@ -16,6 +16,29 @@ struct Opt {
     input: PathBuf,
 }
 
+fn main() {
+    let opt = Opt::from_args();
+    // let reader = open_reader(opt.input);
+    let reader: Box<dyn BufRead> = if opt.input.to_string_lossy() == "-" {
+        Box::new(BufReader::new(std::io::stdin()))
+    } else {
+        Box::new(BufReader::new(File::open(opt.input).unwrap()))
+    };
+    if let Err(e) = process_input(reader) {
+        println!("ERROR: {:?}", e);
+        panic!("fail");
+    }
+}
+
+// TODO: fails with 'creates a temporary which is freed while still in use' on stdin()
+// fn open_reader(input: PathBuf) -> Box<dyn BufRead> {
+//     if input.to_string_lossy() == "-" {
+//         Box::new(BufReader::new(std::io::stdin().lock()))
+//     } else {
+//         Box::new(BufReader::new(File::open(input).unwrap()))
+//     }
+// }
+
 #[derive(Debug)]
 struct DiskIoRec {
     timestamp: String,
@@ -85,19 +108,8 @@ fn fmt_pairs<K: std::fmt::Display, V: std::fmt::Display>(pairs: &Vec<(K, V)>) ->
     res
 }
 
-fn main() {
-    let opt = Opt::from_args();
-    if let Err(e) = process_file(opt.input) {
-        println!("ERROR: {:?}", e);
-        panic!("fail");
-    }
-}
-
-fn process_file(path: PathBuf) -> Result<(), Err> {
-    println!("handling path: {:?}", path);
+fn process_input(reader: Box<dyn BufRead>) -> Result<(), Err> {
     let mut summary = Summary::new();
-    let f = File::open(path)?;
-    let reader = BufReader::new(f);
     for line in reader.lines() {
         let line = line?;
         summary.lines += 1;
