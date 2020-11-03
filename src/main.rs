@@ -4,7 +4,7 @@ use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use structopt::StructOpt;
 
-// use lazy_static::lazy_static;
+use lazy_static::lazy_static;
 use regex::Regex;
 
 type Err = Box<dyn std::error::Error>;
@@ -55,11 +55,14 @@ fn process_file(path: PathBuf) -> Result<(), Err> {
     Ok(())
 }
 
+// TODO: make this less terrible?
 fn parse_line(s: &str) -> Result<DiskIoRec, Err> {
-    let LINE_RE: Regex = Regex::new(
-            r"(\d{2}:\d{2}:\d{2}.\d+) +([^ ]+) .* B=0x([[:xdigit:]]+) .* ([.\d]+) W (.+)\.(\d+)$"
-        ).unwrap();
-    let ERRNO_RE = Regex::new(r" \[([ \d]+)\]").unwrap();
+    lazy_static! {
+        static ref LINE_RE: Regex = Regex::new(
+                r"(\d{2}:\d{2}:\d{2}.\d+) +([^ ]+) .* B=0x([[:xdigit:]]+) .* ([.\d]+) W (.+)\.(\d+)$"
+            ).unwrap();
+        static ref ERRNO_RE: Regex = Regex::new(r" \[([ \d]+)\]").unwrap();
+    }
     let cap = LINE_RE.captures(s);
     if cap.is_none() {
         if !ERRNO_RE.is_match(s) {
