@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::u64;
 use std::io::{BufRead, BufReader};
@@ -25,6 +26,65 @@ struct DiskIoRec {
     pid: u64,
 }
 
+#[derive(Debug)]
+struct Summary {
+    lines: u64,
+    parse_fails: u64,
+    call_time: HashMap<String, f64>,
+    process_time: HashMap<String, f64>,
+}
+
+impl Summary {
+    fn new() -> Summary {
+        Summary {
+            lines: 0,
+            parse_fails: 0,
+            call_time: HashMap::new(),
+            process_time: HashMap::new(),
+        }
+    }
+
+    fn add(&mut self, rec: &DiskIoRec) {
+        self.process_time.entry(rec.process.clone())
+            .and_modify(|t| { *t += rec.interval; })
+            .or_insert(0.);
+        self.call_time.entry(rec.call.clone())
+            .and_modify(|t| { *t += rec.interval; })
+            .or_insert(0.);
+    }
+}
+
+impl std::fmt::Display for Summary {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let top_calls = top_values(&self.call_time, 5);
+        let top_procs = top_values(&self.process_time, 5);
+        write!(f, "lines (fails): {} ({})\ntop calls:\n{}top processes:\n{}\n",
+            self.lines, self.parse_fails, fmt_pairs(&top_calls), fmt_pairs(&top_procs)
+        )
+    }
+}
+
+// TODO: um store in a better data structure to avoid this?
+fn top_values<K, V: PartialOrd>(hash: &HashMap<K, V>, n: usize) -> Vec<(&K, &V)> {
+    let mut top = vec![];
+    let mut vals: Vec<(usize, &V)> = hash.values().enumerate().collect();
+    vals.sort_by(|a, b| { b.1.partial_cmp(a.1).unwrap() });
+    let keys: Vec<&K> = hash.keys().collect();
+    for &(i, val) in vals.iter().take(n) {
+        top.push((keys[i], val));
+    }
+    top
+}
+
+fn fmt_pairs<K: std::fmt::Display, V: std::fmt::Display>(pairs: &Vec<(K, V)>) -> String {
+    let mut res = String::new();
+    for (k, v) in pairs {
+        let entry = format!("  {}: {}\n", k, v);
+        res.push_str(&entry);
+    }
+    res
+}
+
 fn main() {
     let opt = Opt::from_args();
     if let Err(e) = process_file(opt.input) {
@@ -33,25 +93,27 @@ fn main() {
     }
 }
 
-// TODO: collect summary info
 fn process_file(path: PathBuf) -> Result<(), Err> {
     println!("handling path: {:?}", path);
-    let mut fails = 0;
+    let mut summary = Summary::new();
     let f = File::open(path)?;
     let reader = BufReader::new(f);
     for line in reader.lines() {
         let line = line?;
-        // println!("line {}", line);
+        summary.lines += 1;
         let rec = parse_line(&line);
         match rec {
-            Ok(rec) => println!("rec {:?}", rec),
+            Ok(rec) => {
+                summary.add(&rec);
+                println!("rec {:?}", rec);
+            },
             Err(e) => {
                 println!("error parsing line: {:?}\n => {}", e, line);
-                fails += 1;
+                summary.parse_fails += 1;
             }
         }
+        println!("{}", summary);
     }
-    println!("failed parses: {}", fails);
     Ok(())
 }
 
