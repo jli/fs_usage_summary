@@ -71,12 +71,10 @@ impl Summary {
     }
 
     fn add(&mut self, rec: &DiskIoRec) {
-        self.process_time.entry(rec.process.clone())
-            .and_modify(|t| { *t += rec.interval; })
-            .or_insert(0.);
-        self.call_time.entry(rec.call.clone())
-            .and_modify(|t| { *t += rec.interval; })
-            .or_insert(0.);
+        *self.process_time.entry(rec.process.clone())
+            .or_insert(0.) += rec.interval;
+        *self.call_time.entry(rec.call.clone())
+            .or_insert(0.) += rec.interval;
     }
 }
 
@@ -119,6 +117,7 @@ fn process_input(reader: Box<dyn BufRead>) -> Result<(), Err> {
         summary.lines += 1;
         let rec = parse_line(&line);
         match rec {
+            // Ok(rec) => { println!("{:?}", rec); summary.add(&rec) },
             Ok(rec) => summary.add(&rec),
             Err(e) => {
                 println!("{:?}", e);
@@ -135,6 +134,8 @@ fn process_input(reader: Box<dyn BufRead>) -> Result<(), Err> {
                 }
         }
     }
+    // reached end of input, print final summary
+    println!("\n{}", summary);
     Ok(())
 }
 
