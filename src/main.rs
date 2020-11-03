@@ -10,6 +10,9 @@ use regex::Regex;
 
 type Err = Box<dyn std::error::Error>;
 
+const PRINT_EVERY_N_SECS: f32 = 3.;
+const PRINT_TOP_N: usize = 10;
+
 #[derive(Debug, StructOpt)]
 struct Opt {
     #[structopt(parse(from_os_str))]
@@ -79,8 +82,8 @@ impl Summary {
 
 impl std::fmt::Display for Summary {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let top_calls = top_values(&self.call_time, 5);
-        let top_procs = top_values(&self.process_time, 5);
+        let top_calls = top_values(&self.call_time, PRINT_TOP_N);
+        let top_procs = top_values(&self.process_time, PRINT_TOP_N);
         write!(f, "lines (fails): {} ({})\ntop calls:\n{}top processes:\n{}\n",
             self.lines, self.parse_fails, fmt_pairs(&top_calls), fmt_pairs(&top_procs)
         )
@@ -110,21 +113,27 @@ fn fmt_pairs<K: std::fmt::Display, V: std::fmt::Display>(pairs: &Vec<(K, V)>) ->
 
 fn process_input(reader: Box<dyn BufRead>) -> Result<(), Err> {
     let mut summary = Summary::new();
+    let mut last_print = std::time::UNIX_EPOCH;
     for line in reader.lines() {
         let line = line?;
         summary.lines += 1;
         let rec = parse_line(&line);
         match rec {
-            Ok(rec) => {
-                summary.add(&rec);
-                println!("rec {:?}", rec);
-            },
+            Ok(rec) => summary.add(&rec),
             Err(e) => {
-                println!("error parsing line: {:?}\n => {}", e, line);
+                println!("{:?}", e);
                 summary.parse_fails += 1;
             }
         }
-        println!("{}", summary);
+        let now = std::time::SystemTime::now();
+        match now.duration_since(last_print) {
+            Err(_) => last_print = now,
+            Ok(n) =>
+                if n.as_secs_f32() >= PRINT_EVERY_N_SECS {
+                    println!("\n{}", summary);
+                    last_print = now;
+                }
+        }
     }
     Ok(())
 }
@@ -140,9 +149,9 @@ fn parse_line(s: &str) -> Result<DiskIoRec, Err> {
     let cap = LINE_RE.captures(s);
     if cap.is_none() {
         if !ERRNO_RE.is_match(s) {
-            return Err("unexpected parse, no bytes or errno".into());
+            return Err(format!("unexpected parse, no bytes or errno: {}", s).into());
         }
-        return Err("errno case, ignored.".into())
+        return Err("(errno)".into())
     }
     let cap = cap.ok_or("failed to match")?;
     Ok (DiskIoRec {
