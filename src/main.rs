@@ -4,11 +4,10 @@ use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::u64;
 
+use anyhow::{bail, Context, Result};
 use lazy_static::lazy_static;
 use regex::Regex;
 use structopt::StructOpt;
-
-type Err = Box<dyn std::error::Error>;
 
 const PRINT_EVERY_N_SECS: f32 = 3.;
 const PRINT_TOP_N: usize = 10;
@@ -19,7 +18,7 @@ struct Opt {
     input: PathBuf,
 }
 
-fn main() {
+fn main() -> Result<()> {
     let opt = Opt::from_args();
     // let reader = open_reader(opt.input);
     let reader: Box<dyn BufRead> = if opt.input.to_string_lossy() == "-" {
@@ -27,10 +26,7 @@ fn main() {
     } else {
         Box::new(BufReader::new(File::open(opt.input).unwrap()))
     };
-    if let Err(e) = process_input(reader) {
-        println!("ERROR: {:?}", e);
-        panic!("fail");
-    }
+    process_input(reader)
 }
 
 // TODO: fails with 'creates a temporary which is freed while still in use' on stdin()
@@ -112,7 +108,7 @@ fn fmt_pairs<K: std::fmt::Display, V: std::fmt::Display>(pairs: &Vec<(K, V)>) ->
     res
 }
 
-fn process_input(reader: Box<dyn BufRead>) -> Result<(), Err> {
+fn process_input(reader: Box<dyn BufRead>) -> Result<()> {
     let mut summary = Summary::new();
     let mut last_print = std::time::UNIX_EPOCH;
     for line in reader.lines() {
@@ -144,7 +140,7 @@ fn process_input(reader: Box<dyn BufRead>) -> Result<(), Err> {
 }
 
 // TODO: make this less terrible?
-fn parse_line(s: &str) -> Result<DiskIoRec, Err> {
+fn parse_line(s: &str) -> Result<DiskIoRec> {
     lazy_static! {
         static ref LINE_RE: Regex = Regex::new(
             r"(\d{2}:\d{2}:\d{2}.\d+) +([^ ]+) .* B=0x([[:xdigit:]]+) .* ([.\d]+) W (.+)\.(\d+)$"
@@ -155,17 +151,17 @@ fn parse_line(s: &str) -> Result<DiskIoRec, Err> {
     let cap = LINE_RE.captures(s);
     if cap.is_none() {
         if !ERRNO_RE.is_match(s) {
-            return Err(format!("unexpected parse, no bytes or errno: {}", s).into());
+            bail!("unexpected parse, no bytes or errno: {}", s);
         }
-        return Err("(errno)".into());
+        bail!("(errno)");
     }
-    let cap = cap.ok_or("failed to match")?;
+    let cap = cap.context("regex match failed on line")?;
     Ok(DiskIoRec {
-        timestamp: cap.get(1).ok_or("timestamp")?.as_str().to_string(),
-        call: cap.get(2).ok_or("call")?.as_str().to_string(),
-        bytes: u64::from_str_radix(cap.get(3).ok_or("bytes")?.as_str(), 16)?,
-        interval: cap.get(4).ok_or("interval")?.as_str().parse()?,
-        process: cap.get(5).ok_or("process")?.as_str().to_string(),
-        pid: cap.get(6).ok_or("pid")?.as_str().parse()?,
+        timestamp: cap.get(1).context("timestamp")?.as_str().to_string(),
+        call: cap.get(2).context("call")?.as_str().to_string(),
+        bytes: u64::from_str_radix(cap.get(3).context("bytes")?.as_str(), 16)?,
+        interval: cap.get(4).context("interval")?.as_str().parse()?,
+        process: cap.get(5).context("process")?.as_str().to_string(),
+        pid: cap.get(6).context("pid")?.as_str().parse()?,
     })
 }
