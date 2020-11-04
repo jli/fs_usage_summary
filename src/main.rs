@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::fs::File;
-use std::u64;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
-use structopt::StructOpt;
+use std::u64;
 
 use lazy_static::lazy_static;
 use regex::Regex;
+use structopt::StructOpt;
 
 type Err = Box<dyn std::error::Error>;
 
@@ -71,10 +71,8 @@ impl Summary {
     }
 
     fn add(&mut self, rec: &DiskIoRec) {
-        *self.process_time.entry(rec.process.clone())
-            .or_insert(0.) += rec.interval;
-        *self.call_time.entry(rec.call.clone())
-            .or_insert(0.) += rec.interval;
+        *self.process_time.entry(rec.process.clone()).or_insert(0.) += rec.interval;
+        *self.call_time.entry(rec.call.clone()).or_insert(0.) += rec.interval;
     }
 }
 
@@ -82,8 +80,13 @@ impl std::fmt::Display for Summary {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let top_calls = top_values(&self.call_time, PRINT_TOP_N);
         let top_procs = top_values(&self.process_time, PRINT_TOP_N);
-        write!(f, "lines (fails): {} ({})\ntop calls:\n{}top processes:\n{}\n",
-            self.lines, self.parse_fails, fmt_pairs(&top_calls), fmt_pairs(&top_procs)
+        write!(
+            f,
+            "lines (fails): {} ({})\ntop calls:\n{}top processes:\n{}\n",
+            self.lines,
+            self.parse_fails,
+            fmt_pairs(&top_calls),
+            fmt_pairs(&top_procs)
         )
     }
 }
@@ -92,7 +95,7 @@ impl std::fmt::Display for Summary {
 fn top_values<K, V: PartialOrd>(hash: &HashMap<K, V>, n: usize) -> Vec<(&K, &V)> {
     let mut top = vec![];
     let mut vals: Vec<(usize, &V)> = hash.values().enumerate().collect();
-    vals.sort_by(|a, b| { b.1.partial_cmp(a.1).unwrap() });
+    vals.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap());
     let keys: Vec<&K> = hash.keys().collect();
     for &(i, val) in vals.iter().take(n) {
         top.push((keys[i], val));
@@ -127,11 +130,12 @@ fn process_input(reader: Box<dyn BufRead>) -> Result<(), Err> {
         let now = std::time::SystemTime::now();
         match now.duration_since(last_print) {
             Err(_) => last_print = now,
-            Ok(n) =>
+            Ok(n) => {
                 if n.as_secs_f32() >= PRINT_EVERY_N_SECS {
                     println!("\n{}", summary);
                     last_print = now;
                 }
+            }
         }
     }
     // reached end of input, print final summary
@@ -143,8 +147,9 @@ fn process_input(reader: Box<dyn BufRead>) -> Result<(), Err> {
 fn parse_line(s: &str) -> Result<DiskIoRec, Err> {
     lazy_static! {
         static ref LINE_RE: Regex = Regex::new(
-                r"(\d{2}:\d{2}:\d{2}.\d+) +([^ ]+) .* B=0x([[:xdigit:]]+) .* ([.\d]+) W (.+)\.(\d+)$"
-            ).unwrap();
+            r"(\d{2}:\d{2}:\d{2}.\d+) +([^ ]+) .* B=0x([[:xdigit:]]+) .* ([.\d]+) W (.+)\.(\d+)$"
+        )
+        .unwrap();
         static ref ERRNO_RE: Regex = Regex::new(r" \[([ \d]+)\]").unwrap();
     }
     let cap = LINE_RE.captures(s);
@@ -152,10 +157,10 @@ fn parse_line(s: &str) -> Result<DiskIoRec, Err> {
         if !ERRNO_RE.is_match(s) {
             return Err(format!("unexpected parse, no bytes or errno: {}", s).into());
         }
-        return Err("(errno)".into())
+        return Err("(errno)".into());
     }
     let cap = cap.ok_or("failed to match")?;
-    Ok (DiskIoRec {
+    Ok(DiskIoRec {
         timestamp: cap.get(1).ok_or("timestamp")?.as_str().to_string(),
         call: cap.get(2).ok_or("call")?.as_str().to_string(),
         bytes: u64::from_str_radix(cap.get(3).ok_or("bytes")?.as_str(), 16)?,
