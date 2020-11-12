@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
@@ -78,12 +79,11 @@ impl Summary {
     }
 }
 
-impl std::fmt::Display for Summary {
+impl Display for Summary {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let top_calls_time = top_values(&self.call_time, PRINT_TOP_N);
-        let top_calls_entries = top_values(&self.call_entries, PRINT_TOP_N);
-        let top_procs_time = top_values(&self.process_time, PRINT_TOP_N);
-        let top_procs_entries = top_values(&self.process_entries, PRINT_TOP_N);
+        fn fmt_top<K: Display, V: Display + PartialOrd>(hash: &HashMap<K, V>) -> String {
+            fmt_pairs(&top_values(hash, PRINT_TOP_N))
+        }
         write!(
             f,
             "\n=> lines (fails): {} ({})\n\
@@ -93,10 +93,10 @@ impl std::fmt::Display for Summary {
             => top processes (entries):\n{}",
             self.lines,
             self.parse_fails,
-            fmt_pairs(&top_calls_time),
-            fmt_pairs(&top_calls_entries),
-            fmt_pairs(&top_procs_time),
-            fmt_pairs(&top_procs_entries)
+            fmt_top(&self.call_time),
+            fmt_top(&self.call_entries),
+            fmt_top(&self.process_time),
+            fmt_top(&self.process_entries),
         )
     }
 }
@@ -113,7 +113,7 @@ fn top_values<K, V: PartialOrd>(hash: &HashMap<K, V>, n: usize) -> Vec<(&K, &V)>
     top
 }
 
-fn fmt_pairs<K: std::fmt::Display, V: std::fmt::Display>(pairs: &Vec<(K, V)>) -> String {
+fn fmt_pairs<K: Display, V: Display>(pairs: &Vec<(K, V)>) -> String {
     let mut res = String::new();
     for (k, v) in pairs {
         // commands are max 16 chars
@@ -137,7 +137,9 @@ fn process_input(reader: Box<dyn BufRead>) -> Result<()> {
                 summary.parse_fails += 1;
                 // TODO: how to catch this case specifically to ignore it..?
                 let es = e.to_string();
-                if es != "(errno)" { println!("{:?}", e); }
+                if es != "(errno)" {
+                    println!("{:?}", e);
+                }
             }
         }
         let now = std::time::SystemTime::now();
