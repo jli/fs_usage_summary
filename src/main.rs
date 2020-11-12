@@ -53,7 +53,9 @@ struct Summary {
     lines: u64,
     parse_fails: u64,
     call_time: HashMap<String, f64>,
+    call_entries: HashMap<String, u64>,
     process_time: HashMap<String, f64>,
+    process_entries: HashMap<String, u64>,
 }
 
 impl Summary {
@@ -62,27 +64,39 @@ impl Summary {
             lines: 0,
             parse_fails: 0,
             call_time: HashMap::new(),
+            call_entries: HashMap::new(),
             process_time: HashMap::new(),
+            process_entries: HashMap::new(),
         }
     }
 
     fn add(&mut self, rec: &DiskIoRec) {
         *self.process_time.entry(rec.process.clone()).or_insert(0.) += rec.interval;
+        *self.process_entries.entry(rec.process.clone()).or_insert(0) += 1;
         *self.call_time.entry(rec.call.clone()).or_insert(0.) += rec.interval;
+        *self.call_entries.entry(rec.call.clone()).or_insert(0) += 1;
     }
 }
 
 impl std::fmt::Display for Summary {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let top_calls = top_values(&self.call_time, PRINT_TOP_N);
-        let top_procs = top_values(&self.process_time, PRINT_TOP_N);
+        let top_calls_time = top_values(&self.call_time, PRINT_TOP_N);
+        let top_calls_entries = top_values(&self.call_entries, PRINT_TOP_N);
+        let top_procs_time = top_values(&self.process_time, PRINT_TOP_N);
+        let top_procs_entries = top_values(&self.process_entries, PRINT_TOP_N);
         write!(
             f,
-            "lines (fails): {} ({})\ntop calls:\n{}top processes:\n{}\n",
+            "\n=> lines (fails): {} ({})\n\
+            => top calls (time):\n{}\
+            => top calls (entries):\n{}\
+            => top processes (time):\n{}\
+            => top processes (entries):\n{}",
             self.lines,
             self.parse_fails,
-            fmt_pairs(&top_calls),
-            fmt_pairs(&top_procs)
+            fmt_pairs(&top_calls_time),
+            fmt_pairs(&top_calls_entries),
+            fmt_pairs(&top_procs_time),
+            fmt_pairs(&top_procs_entries)
         )
     }
 }
@@ -102,7 +116,8 @@ fn top_values<K, V: PartialOrd>(hash: &HashMap<K, V>, n: usize) -> Vec<(&K, &V)>
 fn fmt_pairs<K: std::fmt::Display, V: std::fmt::Display>(pairs: &Vec<(K, V)>) -> String {
     let mut res = String::new();
     for (k, v) in pairs {
-        let entry = format!("  {}: {}\n", k, v);
+        // commands are max 16 chars
+        let entry = format!("  {:>16}: {:.1}\n", k, v);
         res.push_str(&entry);
     }
     res
@@ -119,8 +134,10 @@ fn process_input(reader: Box<dyn BufRead>) -> Result<()> {
             // Ok(rec) => { println!("{:?}", rec); summary.add(&rec) },
             Ok(rec) => summary.add(&rec),
             Err(e) => {
-                println!("{:?}", e);
                 summary.parse_fails += 1;
+                // TODO: how to catch this case specifically to ignore it..?
+                let es = e.to_string();
+                if es != "(errno)" { println!("{:?}", e); }
             }
         }
         let now = std::time::SystemTime::now();
@@ -139,15 +156,16 @@ fn process_input(reader: Box<dyn BufRead>) -> Result<()> {
     Ok(())
 }
 
-// TODO: make this less terrible?
+lazy_static! {
+    static ref LINE_RE: Regex = Regex::new(
+        r"(\d{2}:\d{2}:\d{2}.\d+) +([^ ]+) .* B=0x([[:xdigit:]]+) .* ([.\d]+) W (.+)\.(\d+)$"
+    )
+    .unwrap();
+    static ref ERRNO_RE: Regex = Regex::new(r" \[([ \d]+)\]").unwrap();
+}
+
+// TODO: way to make this more concise?
 fn parse_line(s: &str) -> Result<DiskIoRec> {
-    lazy_static! {
-        static ref LINE_RE: Regex = Regex::new(
-            r"(\d{2}:\d{2}:\d{2}.\d+) +([^ ]+) .* B=0x([[:xdigit:]]+) .* ([.\d]+) W (.+)\.(\d+)$"
-        )
-        .unwrap();
-        static ref ERRNO_RE: Regex = Regex::new(r" \[([ \d]+)\]").unwrap();
-    }
     let cap = LINE_RE.captures(s);
     if cap.is_none() {
         if !ERRNO_RE.is_match(s) {
@@ -157,11 +175,11 @@ fn parse_line(s: &str) -> Result<DiskIoRec> {
     }
     let cap = cap.context("regex match failed on line")?;
     Ok(DiskIoRec {
-        timestamp: cap.get(1).context("timestamp")?.as_str().to_string(),
+        timestamp: cap.get(1).context("timestamp")?.as_str().into(),
         call: cap.get(2).context("call")?.as_str().to_string(),
         bytes: u64::from_str_radix(cap.get(3).context("bytes")?.as_str(), 16)?,
         interval: cap.get(4).context("interval")?.as_str().parse()?,
-        process: cap.get(5).context("process")?.as_str().to_string(),
+        process: cap.get(5).context("process")?.as_str().into(),
         pid: cap.get(6).context("pid")?.as_str().parse()?,
     })
 }
