@@ -21,23 +21,17 @@ struct Opt {
 
 fn main() -> Result<()> {
     let opt = Opt::from_args();
-    // let reader = open_reader(opt.input);
-    let reader: Box<dyn BufRead> = if opt.input.to_string_lossy() == "-" {
-        Box::new(BufReader::new(std::io::stdin()))
-    } else {
-        Box::new(BufReader::new(File::open(opt.input).unwrap()))
-    };
+    let reader = open_reader(opt.input);
     process_input(reader)
 }
 
-// TODO: fails with 'creates a temporary which is freed while still in use' on stdin()
-// fn open_reader(input: PathBuf) -> Box<dyn BufRead> {
-//     if input.to_string_lossy() == "-" {
-//         Box::new(BufReader::new(std::io::stdin().lock()))
-//     } else {
-//         Box::new(BufReader::new(File::open(input).unwrap()))
-//     }
-// }
+fn open_reader(input: PathBuf) -> Box<dyn BufRead> {
+    if input.to_string_lossy() == "-" {
+        Box::new(BufReader::new(std::io::stdin()))
+    } else {
+        Box::new(BufReader::new(File::open(input).unwrap()))
+    }
+}
 
 #[derive(Debug)]
 struct DiskIoRec {
@@ -49,7 +43,7 @@ struct DiskIoRec {
     pid: u64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct Summary {
     lines: u64,
     parse_fails: u64,
@@ -60,17 +54,6 @@ struct Summary {
 }
 
 impl Summary {
-    fn new() -> Summary {
-        Summary {
-            lines: 0,
-            parse_fails: 0,
-            call_time: HashMap::new(),
-            call_entries: HashMap::new(),
-            process_time: HashMap::new(),
-            process_entries: HashMap::new(),
-        }
-    }
-
     fn add(&mut self, rec: &DiskIoRec) {
         *self.process_time.entry(rec.process.clone()).or_insert(0.) += rec.interval;
         *self.process_entries.entry(rec.process.clone()).or_insert(0) += 1;
@@ -124,7 +107,7 @@ fn fmt_pairs<K: Display, V: Display>(pairs: &Vec<(K, V)>) -> String {
 }
 
 fn process_input(reader: Box<dyn BufRead>) -> Result<()> {
-    let mut summary = Summary::new();
+    let mut summary = Summary::default();
     let mut last_print = std::time::UNIX_EPOCH;
     for line in reader.lines() {
         let line = line?;
